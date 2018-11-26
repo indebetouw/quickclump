@@ -145,7 +145,7 @@ def _main(argv=None):
 
     if options.ofits.strip().upper() != "NONE":
         LOGGER.debug("Writing output FITS.")
-        write_ofits(options.ofits, clmask, final_clumps_count, options)
+        write_ofits(options.ifits, options.ofits, clmask, final_clumps_count, options)
 
     if options.otext.strip().upper() != "NONE":
         LOGGER.debug("Writing output text file.")
@@ -398,7 +398,7 @@ def find_all_clumps(idata, clmask, clumps, options):
         dval = idata[px_key]
 
         # Skip NANs
-        if dval is np.nan:
+        if np.isnan(dval):
             continue
 
         # Terminate if dval < Tcutoff.  The keys are sorted so we don't need
@@ -542,7 +542,7 @@ def renumber_clmask(clmask, clumps):
                 clmask[tuple(px.ijk)] = clump.final_ncl
 
 
-def write_ofits(ofits, clmask, final_clumps_count, options):
+def write_ofits(ifits, ofits, clmask, final_clumps_count, options):
 
     """Write clmask to the output FITS file (ofits).
 
@@ -560,6 +560,8 @@ def write_ofits(ofits, clmask, final_clumps_count, options):
     elif final_clumps_count <= np.iinfo("int16").max:
         clmask = clmask.astype("int16")
 
+    inhead=fits.getheader(ifits)
+
     # Create a new FITS HDU.  Compensate for the border.
     ohdu = fits.PrimaryHDU(clmask[1:-1, 1:-1, 1:-1])
 
@@ -569,6 +571,12 @@ def write_ofits(ofits, clmask, final_clumps_count, options):
         datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S UTC"),
         "file creation date"
         )
+
+    keys=['bmaj','bmin','bpa','radecsys','longpole','latpole','ctype1','cunit1','crval1','crpix1','cdelt1','ctype2','cunit2','crval2','crpix2','cdelt2','ctype3','cunit3','crval3','crpix3','cdelt3','crota2','pc1_1','pc2_1','pc3_1','pc1_2','pc2_2','pc2_3','pc1_3','pc2_3','pc3_3']
+    for k in keys:
+        if k.upper() in inhead.keys():
+            ohdu.header[k.upper()] = inhead.get(k.upper())
+          
     ohdu.header["COMMENT"] = ("File created by Quickclump {v}."
                               .format(v=__version__))
     ohdu.header["COMMENT"] = ("Original data file: '{ifits}'"
