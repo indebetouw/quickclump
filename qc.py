@@ -131,11 +131,14 @@ def _main(argv=None):
     LOGGER.debug("Finding clumps.")
     find_all_clumps(idata, clmask, clumps, options)
 
+    LOGGER.debug("Merging faint clumps.")
+    merge_faint_clumps(clumps, options.Tpkmin)
+
     LOGGER.debug("Merging small clumps.")
     merge_small_clumps(clumps, options.Npxmin)
 
     LOGGER.debug("Renumbering clumps.")
-    final_clumps_count = renumber_clumps(clumps, options.Npxmin)
+    final_clumps_count = renumber_clumps(clumps, options.Npxmin, options.Tpkmin)
     renumber_clmask(clmask, clumps)
 
     # NOTE: The clumps have now set their final labels/numbers, stored in the
@@ -178,6 +181,13 @@ def parse_args(argv=None):
         type=int,
         default=DEFAULT_NPXMIN,
         help="Minimal size of a clump in pixels.  Smaller clumps will be "
+             "either merged to an adjacent clumps or deleted.  "
+             "(default: %(default)s)"
+        )
+    parser.add_argument(
+        "--Tpkmin",
+        type=float,
+        help="Minimum peak for a clump - clumps with lower peak will be "
              "either merged to an adjacent clumps or deleted.  "
              "(default: %(default)s)"
         )
@@ -306,7 +316,7 @@ def set_defaults(options, idata):
             new_options.otext = new_options.ifits + ".clumps.txt"
 
     # dTleaf/Tcutoff -- 3*sig_noise
-    if (new_options.dTleaf is None) or (new_options.Tcutoff is None):
+    if (new_options.dTleaf is None) or (new_options.Tcutoff is None) or (new_options.Tpkmin is None):
         LOGGER.debug("Options dTleaf and/or Tcutoff was not set. "
                      "Estimating from the input data.")
 
@@ -343,6 +353,12 @@ def set_defaults(options, idata):
                          3.*std_noise, std_noise)
             new_options.Tcutoff = 3.*std_noise
 
+        # Set Tpkmin.
+        if new_options.Tpkmin is None:
+            LOGGER.debug("Setting Tpkmin to %f (= 3*std_noise = 3*%f)",
+                         3.*std_noise, std_noise)
+            new_options.Tpkmin = 3.*std_noise
+
     return new_options
 
 
@@ -350,6 +366,7 @@ def check_options(options):
     """Check values of dTleaf and Tcutoff."""
     assert hasattr(options, "dTleaf")
     assert hasattr(options, "Tcutoff")
+    assert hasattr(options, "Tpkmin")
     if not options.dTleaf > 0.:
         raise OutOfBoundsError("'dTleaf' must be > 0. It is {0}."
                                .format(options.dTleaf))
@@ -488,8 +505,34 @@ def find_all_clumps(idata, clmask, clumps, options):
                         dist2_min = dist2
 
 
+def merge_faint_clumps(clumps, Tpkmin):
+    """Merge clumps with too low peak
+
+    Clumps with too faint max (< Tpkmin) will be merged to their
+    parents.  Merging starts from the "bottom", i.e. clumps with the lowest
+    dpeak values will be processed first.
+    """
+    import pdb
+    for clump in reversed(clumps):
+        if clump.merged:
+            # Already merged --> skip
+            continue
+        elif clump.parent is clump:
+            # Solitary/orphan clump --> skip
+            continue
+        else:
+            #if clump.ncl>2000:
+            #    print np.mean(np.array([px.xyz for px in clumps[0].pixels]),axis=0), np.max([px.dval for px in clump.pixels])
+            #    pdb.set_trace()
+            if np.max([px.dval for px in clump.pixels]) < Tpkmin:
+                # Too faint clump --> merge to its parent
+                clump.merge_to_parent()
+
+
+            
+
 def merge_small_clumps(clumps, Npxmin):
-    """Merge clumps with too little pixels.
+    """Merge clumps with too little pixels 
 
     Clumps with too little pixels (< Npxmin) will be merged to their
     parents.  Clumps will also be merged, if their parents have too little
@@ -511,7 +554,7 @@ def merge_small_clumps(clumps, Npxmin):
             clump.merge_to_parent()
 
 
-def renumber_clumps(clumps, Npxmin):
+def renumber_clumps(clumps, Npxmin, Tpkmin):
     """Renumber clumps taking into account mergers and Npxmin limit.
 
     Set clumps' final_ncl so that:
@@ -523,7 +566,7 @@ def renumber_clumps(clumps, Npxmin):
     """
     new_ncl = 0
     for clump in clumps:
-        if clump.merged or clump.npx < Npxmin:
+        if clump.merged or clump.npx < Npxmin or np.max([px.dval for px in clump.pixels]) < Tpkmin:
             continue
         else:
             new_ncl += 1
