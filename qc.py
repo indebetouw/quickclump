@@ -134,6 +134,13 @@ def _main(argv=None):
     LOGGER.debug("Merging faint clumps.")
     merge_faint_clumps(clumps, options.Tpkmin)
 
+    #import pdb
+    #import pylab as pl
+    #pl.clf()
+    #pl.imshow(clmask[48],origin="bottom",interpolation="nearest",vmax=2,cmap="jet")
+    #pl.draw()
+    #pdb.set_trace()
+
     LOGGER.debug("Merging small clumps.")
     merge_small_clumps(clumps, options.Npxmin)
 
@@ -509,7 +516,7 @@ def merge_faint_clumps(clumps, Tpkmin):
     """Merge clumps with too low peak
 
     Clumps with too faint max (< Tpkmin) will be merged to their
-    parents.  Merging starts from the "bottom", i.e. clumps with the lowest
+    parents or removed.  Merging starts from the "bottom", i.e. clumps with the lowest
     dpeak values will be processed first.
     """
     import pdb
@@ -521,12 +528,20 @@ def merge_faint_clumps(clumps, Tpkmin):
             # Solitary/orphan clump --> skip
             continue
         else:
-            #if clump.ncl>2000:
-            #    print np.mean(np.array([px.xyz for px in clumps[0].pixels]),axis=0), np.max([px.dval for px in clump.pixels])
-            #    pdb.set_trace()
             if np.max([px.dval for px in clump.pixels]) < Tpkmin:
-                # Too faint clump --> merge to its parent
-                clump.merge_to_parent()
+                # Too faint clump
+                # print "faint ",clump.ncl,",parent=",clump.parent.ncl
+                # print "touching:"
+                touchparent=False
+                for cl,val in clump.touching.items():
+                    # print "  ",cl.ncl," at ",val
+                    if clump.parent.ncl == cl.ncl:
+                        touchparent=True
+                # if clump.ncl>4000:
+                #    pdb.set_trace()
+                if touchparent:
+                    # merge to its parent
+                    clump.merge_to_parent()
 
 
             
@@ -955,7 +970,7 @@ class Clump(PixelLike):
         str_.append("  connected:\n")
         str_.extend(["    {final_ncl:>3d} {dval:.12g}\n"
                      "".format(final_ncl=c[0].final_ncl, dval=float(c[1]))
-                     for c in connected])
+                     for c in connected if c[0].final_ncl!=None])
 
         return "".join(str_)
 
